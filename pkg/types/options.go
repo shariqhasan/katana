@@ -89,6 +89,8 @@ type Options struct {
 	HeadlessOptionalArguments goflags.StringSlice
 	// HeadlessNoSandbox specifies if chrome should be start in --no-sandbox mode
 	HeadlessNoSandbox bool
+	// OutputGraph graphs in .dot and .json (one per url)
+	OutputGraph string
 	// SystemChromePath : Specify the chrome binary path for headless crawling
 	SystemChromePath string
 	// OnResult allows callback function on a result

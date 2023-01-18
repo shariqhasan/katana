@@ -4,10 +4,12 @@ go 1.18
 
 require (
 	github.com/PuerkitoBio/goquery v1.8.0
+	github.com/dominikbraun/graph v0.14.0
 	github.com/go-rod/rod v0.112.3
 	github.com/json-iterator/go v1.1.12
 	github.com/logrusorgru/aurora v2.0.3+incompatible
 	github.com/lukasbob/srcset v0.0.0-20190730101422-86b742e617f3
+	github.com/mfonda/simhash v0.0.0-20151007195837-79f94a1100d6
 	github.com/pkg/errors v0.9.1
 	github.com/projectdiscovery/fastdialer v0.0.21
 	github.com/projectdiscovery/goflags v0.1.6

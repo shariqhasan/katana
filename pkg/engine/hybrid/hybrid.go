@@ -1,17 +1,15 @@
 package hybrid
 
 import (
-	"bytes"
 	"context"
 	"fmt"
-	"io"
 	"net/http"
 	"net/url"
 	"os"
+	"path/filepath"
 	"sync/atomic"
 	"time"
 
-	"github.com/PuerkitoBio/goquery"
 	"github.com/go-rod/rod"
 	"github.com/go-rod/rod/lib/launcher"
 	"github.com/go-rod/rod/lib/launcher/flags"
@@ -192,6 +190,15 @@ func (c *Crawler) Crawl(rootURL string) error {
 		}
 	}
 
+	var crawlerGraph *navigation.Graph
+	if c.options.Options.OutputGraph != "" {
+		var err error
+		crawlerGraph, err = navigation.NewGraph()
+		if err != nil {
+			return err
+		}
+	}
+
 	wg := sizedwaitgroup.New(c.options.Options.Concurrency)
 	running := int32(0)
 	for {
@@ -223,7 +230,11 @@ func (c *Crawler) Crawl(rootURL string) error {
 			if c.options.Options.Delay > 0 {
 				time.Sleep(time.Duration(c.options.Options.Delay) * time.Second)
 			}
-			resp, err := c.navigateRequest(ctx, httpclient, queue, parseResponseCallback, newBrowser, req, hostname)
+
+			// responses contains:
+			// index 0 => primary syncronous node
+			// indexes 1..n => secondary asyncronous nodes
+			responses, err := c.navigateRequest(ctx, httpclient, queue, parseResponseCallback, incognitoBrowser, req, hostname, crawlerGraph)
 			if err != nil {
 				gologger.Warning().Msgf("Could not request seed URL: %s\n", err)
 
@@ -237,14 +248,35 @@ func (c *Crawler) Crawl(rootURL string) error {
 
 				return
 			}
-			if resp == nil || resp.Resp == nil && resp.Reader == nil {
-				return
+
+			for idx, resp := range responses {
+				if resp == nil || resp.Resp == nil && resp.Reader == nil {
+					return
+				}
+
+				if crawlerGraph != nil {
+					resp.State, _ = crawlerGraph.AddState(req, *resp, resp.Resp.Request.URL.String())
+					// the web state for response zero becomes the root for asyncronous requests
+					if idx == 0 {
+						req.State = resp.State
+					}
+				}
+
+				// process the dom-rendered response
+				parser.ParseResponse(*resp, parseResponseCallback)
 			}
-			// process the dom-rendered response
-			parser.ParseResponse(*resp, parseResponseCallback)
 		}()
 	}
+
 	wg.Wait()
+
+	if crawlerGraph != nil {
+		// use the domain name as filename
+		outputFile := filepath.Join(c.options.Options.OutputGraph, hostname)
+		if err := crawlerGraph.ExportTo(outputFile); err != nil {
+			return err
+		}
+	}
 
 	return nil
 }
