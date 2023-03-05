@@ -44,18 +44,16 @@ type Crawler struct {
 
 // New returns a new standard crawler instance
 func New(options *types.CrawlerOptions) (*Crawler, error) {
-	var dataStore string
-	var err error
-	if options.Options.ChromeDataDir != "" {
-		dataStore = options.Options.ChromeDataDir
-	} else {
-		dataStore, err = os.MkdirTemp("", "katana-*")
+	previousPIDs := findChromeProcesses()
+	var tempDir string = "" // empty if crawlproject is given
+
+	if options.Options.CrawlProject == "" {
+		var err error
+		tempDir, err = os.MkdirTemp("", "katana-*")
 		if err != nil {
 			return nil, errorutil.NewWithTag("hybrid", "could not create temporary directory").Wrap(err)
 		}
 	}
-
-	previousPIDs := findChromeProcesses()
 
 	chromeLauncher := launcher.New().
 		Leakless(false).
@@ -67,8 +65,13 @@ func New(options *types.CrawlerOptions) (*Crawler, error) {
 		Set("hide-scrollbars", "true").
 		Set("window-size", fmt.Sprintf("%d,%d", 1080, 1920)).
 		Set("mute-audio", "true").
-		Delete("use-mock-keychain").
-		UserDataDir(dataStore)
+		Delete("use-mock-keychain")
+
+	if options.Options.CrawlProject != "" {
+		chromeLauncher.UserDataDir(options.Options.CrawlProject)
+	} else {
+		chromeLauncher.UserDataDir(tempDir)
+	}
 
 	if options.Options.UseInstalledChrome {
 		if chromePath, hasChrome := launcher.LookPath(); hasChrome {
@@ -118,7 +121,7 @@ func New(options *types.CrawlerOptions) (*Crawler, error) {
 		options:      options,
 		browser:      browser,
 		previousPIDs: previousPIDs,
-		tempDir:      dataStore,
+		tempDir:      tempDir,
 	}
 	if options.Options.KnownFiles != "" {
 		httpclient, _, err := common.BuildClient(options.Dialer, options.Options, nil)
@@ -135,7 +138,7 @@ func (c *Crawler) Close() error {
 	if err := c.browser.Close(); err != nil {
 		return err
 	}
-	if c.options.Options.ChromeDataDir == "" {
+	if c.tempDir != "" {
 		if err := os.RemoveAll(c.tempDir); err != nil {
 			return err
 		}
@@ -189,7 +192,7 @@ func (c *Crawler) Crawl(rootURL string) error {
 
 	// create a new browser instance (default to incognito mode)
 	var newBrowser *rod.Browser
-	if c.options.Options.HeadlessNoIncognito {
+	if c.options.Options.HeadlessNoIncognito || c.options.Options.CrawlProject != "" {
 		if err := c.browser.Connect(); err != nil {
 			return err
 		}
@@ -213,6 +216,10 @@ func (c *Crawler) Crawl(rootURL string) error {
 			break
 		}
 		item := queue.Pop()
+		if item == nil {
+			// if no elements are present in queue
+			break
+		}
 		req, ok := item.(navigation.Request)
 		if !ok {
 			continue
